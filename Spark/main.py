@@ -12,7 +12,7 @@ import datetime
 api_key = '2cf3c04972e04f20bf971504230205'
 
 # make a directory to save the downloaded csv files
-save_dir = "/app/data"
+save_dir = "/app/datafiles"
 if not os.path.exists(save_dir):
     os.makedirs(save_dir)
 

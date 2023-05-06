@@ -142,7 +142,7 @@ class dataFiles:
         self.listview = listview
         self.listview.clear()  # Clear the listbox view
         container_id = "sparkcontainer" 
-        directory = r"/app/data"
+        directory = r"/app/datafiles"
         command = f"docker exec {container_id} ls {directory}"
         try:
             output = check_output(command, shell=True).decode()
@@ -407,26 +407,30 @@ class stream:
 
         try:
             if locations:
-                command1 = f"docker exec -d sparkcontainer python3 /app/data/test.py {locations}"
-                subprocess.run(command1, shell=True, check=True)
-                print("Stream1 started successfully.")
+                message = f'Are you sure you want to start streaming from these countries? \nCountries: {locations}'     
+                confirm = QMessageBox.question(self, 'Start Stream', message ,
+                                                QMessageBox.Yes | QMessageBox.No)
+                if confirm == QMessageBox.Yes:
+                    command1 = f"docker exec -d sparkcontainer python3 /app/data/test.py {locations}"
+                    subprocess.run(command1, shell=True, check=True)
+                    print("Stream1 started successfully.")
 
-                command2 = f'docker run -it --rm ubunimage python3 /app/bin/sendStream.py -h'
-                output2 = subprocess.check_output(command2, shell=True)
-                print(output2.decode())
-                print("command 2 ran")
+                    command2 = f'docker run -it --rm ubunimage python3 /app/bin/sendStream.py -h'
+                    output2 = subprocess.check_output(command2, shell=True)
+                    print(output2.decode())
+                    print("command 2 ran")
 
-                command3 = f'docker exec -d sparkcontainer python3 /app/bin/processStream.py my-stream'
-                self.process53 = subprocess.Popen(command3, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-                print("Stream2 started successfully.")
+                    command3 = f'docker exec -d sparkcontainer python3 /app/bin/processStream.py my-stream'
+                    self.process53 = subprocess.Popen(command3, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+                    print("Stream2 started successfully.")
 
-                command4 = f'docker exec -it sparkcontainer python3 /app/bin/sendStream.py /app/data.csv my-stream'
-                self.process_thread = ProcessThread(command4)
-                #self.process_thread.new_output.connect(self.update_output)
-                self.process_thread.start()
-                print("Stream3 started successfully.")
+                    command4 = f'docker exec -it sparkcontainer python3 /app/bin/sendStream.py /app/data.csv my-stream'
+                    self.process_thread = ProcessThread(command4)
+                    #self.process_thread.new_output.connect(self.update_output)
+                    self.process_thread.start()
+                    print("Stream3 started successfully.")
 
-                self.streamLabel.setText("Stream status: Stream is running.")
+                    self.streamLabel.setText("Stream status: Stream is running.")
             else:
                 raise ValueError("Please select a country")
             
@@ -441,20 +445,49 @@ class stream:
         "docker exec sparkcontainer pgrep -f processStream.py",
         "docker exec sparkcontainer pgrep -f sendStream.py"
         ]
-        for command in commands:
+        
+        message = f'Are you sure you want to stop the stream?'     
+        confirm = QMessageBox.question(self, 'Stop Stream', message ,
+                                        QMessageBox.Yes | QMessageBox.No)
+        if confirm == QMessageBox.Yes:
+            for command in commands:
+                try:
+                    output = subprocess.check_output(command, shell=True)
+                    pids = output.decode().strip().split("\n")
+                    for pid in pids:
+                        try:
+                            subprocess.check_output(f"docker exec sparkcontainer kill {pid}", shell=True)
+                            print(f"Process with PID {pid} killed.")
+                        except subprocess.CalledProcessError as e:
+                            print(f"Error killing process with PID {pid}: {e}")
+                    self.streamLabel.setText("Stream status: Stream has stopped.")
+                    print("Stream stopped successfully.")
+                except subprocess.CalledProcessError as e:
+                    print(f"Error getting process ID: {e}")
+        
+    def viewRT(self):
+        message = f'Proceed to analyse RT Data?'     
+        confirm = QMessageBox.question(self, 'Analyse RT', message ,
+                                        QMessageBox.Yes | QMessageBox.No)
+        if confirm == QMessageBox.Yes:
             try:
-                output = subprocess.check_output(command, shell=True)
-                pids = output.decode().strip().split("\n")
-                for pid in pids:
-                    try:
-                        subprocess.check_output(f"docker exec sparkcontainer kill {pid}", shell=True)
-                        print(f"Process with PID {pid} killed.")
-                    except subprocess.CalledProcessError as e:
-                        print(f"Error killing process with PID {pid}: {e}")
-                self.streamLabel.setText("Stream status: Stream has stopped.")
+                directory_path = r'.\hadoop_namenode'
+                if os.path.exists(directory_path):
+                    shutil.rmtree(directory_path)
+                else:
+                    print(f"Directory '{directory_path}' does not exist.")
+                command6 = f'docker cp sparkcontainer:/usr/local/output2 hadoop_namenode/'
+                check_output(command6, shell=True)
+                command7 = f'docker cp hadoop_namenode/ viscontainer2:/usr/local/'
+                check_output(command7, shell=True)
+
+                url = QUrl("http://localhost:8502")  # URL to open in the web browser
+                QDesktopServices.openUrl(url)
+        
             except subprocess.CalledProcessError as e:
-                print(f"Error getting process ID: {e}")
-        print("Stream stopped successfully.")
+                print(f'Error: {e.returncode}, Output: {e.output.decode()}')
+            
+            
 
 #For user to view and select countries        
 class countries:
@@ -647,6 +680,9 @@ class fetchDataController:
         self.listview = listview
         dataFiles.getHistoricalData(self,self.stackedWidget, self.selectedCountry, self.startDate, self.endDate, self.listview)
 
+class analyseRTController:
+    def analyseRTC(self):
+        stream.viewRT(self)
 #====================================BOUNDARIES=======================================
 
 #Boundary for Starting page UI (page0)
@@ -924,7 +960,7 @@ class Page3(QWidget):
         self.pushButton34.clicked.connect(self.killStream)
         self.backButton37.clicked.connect(self.goBack)
         self.pushButton35.clicked.connect(self.fetchRTData)
-        #self.pushButton36.clicked.connect(self.analyseRT)
+        self.pushButton36.clicked.connect(self.analyseRT)
 
         self.addSelButton.clicked.connect(self.addSelection)
         self.removeSelBtn.clicked.connect(self.removeSelection)
@@ -993,7 +1029,10 @@ class Page3(QWidget):
                 print("ok")
         except ValueError as e:
             QMessageBox.warning(self, 'Error', str(e))
-    
+
+    def analyseRT(self):
+        analyseRTController.analyseRTC(self)
+        
     def closeEvent(self):
         super().closeEvent()
 
