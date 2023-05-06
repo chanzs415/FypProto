@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 
 #import
+import os, subprocess, shutil, signal, docker
+from subprocess import check_output
 from confluent_kafka import Consumer, KafkaError, KafkaException
 import time
 import json
@@ -14,6 +16,27 @@ def msg_process(msg):
     val = msg.value()
     dval = json.loads(val)
     print(time_start, dval)
+    processRT(dval)
+    
+def processRT(dval):
+    try:
+        if dval:
+            command5 = f'spark-submit cleanRTData.py data.csv'
+            # Run the command and capture the output
+            output = subprocess.check_output(command5, shell=True, stderr=subprocess.STDOUT)
+            #Print the output
+            print(output.decode())
+
+        # Show a message box after the function has finished running
+            #messagebox.showinfo('Finished', 'Processing complete!')
+            print("Processing complete")
+        else:
+            raise ValueError("None streamed")
+    except Exception as e:
+        # Show a message box with the error message if an exception occurs
+        #messagebox.showerror('Error', str(e))
+        print("Error" + str(e))
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)

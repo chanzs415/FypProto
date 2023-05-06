@@ -2,7 +2,6 @@
 
 """Generates a stream to Kafka from a time series csv file.
 """
-
 #!/usr/bin/env python
 
 """Generates a stream to Kafka from a time series csv file.
@@ -72,7 +71,6 @@ def main():
                 jresult = json.dumps(result)
                 firstline = False
                 producer.produce(topic, key=p_key, value=jresult, callback=acked)
-
             else:
                 line = next(rdr, None)
                 result = {}
@@ -103,6 +101,8 @@ def main():
             time.sleep(61)
         except TypeError:
             sys.exit()
+
+
 
 if __name__ == "__main__":
     main()

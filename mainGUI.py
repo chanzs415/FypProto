@@ -110,9 +110,9 @@ class ProcessThread(QThread):
 class startApp:
     def startContainer(self,stackedWidget):
         self.stackedWidget = stackedWidget
-        #process = QProcess(None)
-        #command1 = r'docker-compose -f .\docker-compose.yml up'
-        #process.startDetached(command1)   
+        process = QProcess(None)
+        command1 = r'docker-compose -f .\docker-compose.yml up'
+        process.startDetached(command1)   
         self.stackedWidget.setCurrentIndex(5)
 
 class containerE:
@@ -330,12 +330,12 @@ class dataFiles:
         else:
             print(f"Directory '{directory_path}' does not exist.")
 
-        command2 = f'docker cp sparkcontainer:/app/ hadoop_namenode/'
+        command2 = f'docker cp sparkcontainer:/app/datafiles/* hadoop_namenode/'
         output2 = subprocess.check_output(command2, shell=True)
         print(output2.decode())
         print("Tranferring to volume")
 
-        command3 = f'docker cp hadoop_namenode/data namenode:/tmp'
+        command3 = f'docker cp hadoop_namenode/ namenode:/tmp'
         output3 = subprocess.check_output(command3, shell=True)
         print(output3.decode())
         print("transferring to namenode")
@@ -399,37 +399,45 @@ class streamLit:
 
 #For RT Stream
 class stream:
-    def startStream(self, streamLabel):
+    def startStream(self, streamLabel, selectedcountry):
         self.streamLabel = streamLabel
+        self.selectedcountry = selectedcountry
+        items = [self.selectedcountry.item(i).text() for i in range(self.selectedcountry.count())]
+        locations = ' '.join(items)
+
         try:
-            command1 = "docker exec -d sparkcontainer python3 /app/data/test2.py"
-            subprocess.run(command1, shell=True, check=True)
-            print("Stream1 started successfully.")
+            if locations:
+                command1 = f"docker exec -d sparkcontainer python3 /app/data/test.py {locations}"
+                subprocess.run(command1, shell=True, check=True)
+                print("Stream1 started successfully.")
 
-            command2 = f'docker run -it --rm ubunimage python3 /app/bin/sendStream.py -h'
-            output2 = subprocess.check_output(command2, shell=True)
-            print(output2.decode())
-            print("command 2 ran")
+                command2 = f'docker run -it --rm ubunimage python3 /app/bin/sendStream.py -h'
+                output2 = subprocess.check_output(command2, shell=True)
+                print(output2.decode())
+                print("command 2 ran")
 
-            command3 = f'docker exec -d sparkcontainer python3 /app/bin/processStream.py my-stream'
-            self.process53 = subprocess.Popen(command3, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-            print("Stream2 started successfully.")
+                command3 = f'docker exec -d sparkcontainer python3 /app/bin/processStream.py my-stream'
+                self.process53 = subprocess.Popen(command3, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+                print("Stream2 started successfully.")
 
-            command4 = f'docker exec -it sparkcontainer python3 /app/bin/sendStream.py /app/data.csv my-stream'
-            self.process_thread = ProcessThread(command4)
-            #self.process_thread.new_output.connect(self.update_output)
-            self.process_thread.start()
-            print("Stream3 started successfully.")
+                command4 = f'docker exec -it sparkcontainer python3 /app/bin/sendStream.py /app/data.csv my-stream'
+                self.process_thread = ProcessThread(command4)
+                #self.process_thread.new_output.connect(self.update_output)
+                self.process_thread.start()
+                print("Stream3 started successfully.")
 
-            self.streamLabel.setText("Stream status: Stream is running.")
-
-        except subprocess.CalledProcessError as e:
-            print(f"Error starting stream: {e}")
+                self.streamLabel.setText("Stream status: Stream is running.")
+            else:
+                raise ValueError("Please select a country")
+            
+        except ValueError as e:
+            QMessageBox.warning(self,'Warning', str(e), QMessageBox.Ok)
+            print(str(e))
     
     def stopStream(self, streamLabel):
         self.streamLabel = streamLabel
         commands = [
-        "docker exec sparkcontainer pgrep -f test2.py",
+        "docker exec sparkcontainer pgrep -f test.py",
         "docker exec sparkcontainer pgrep -f processStream.py",
         "docker exec sparkcontainer pgrep -f sendStream.py"
         ]
@@ -592,9 +600,10 @@ class delExFileController:
             QMessageBox.warning(self, 'Error', str(e))
 
 class realTimeStreamController:
-    def realTimeStreamC(self, streamLabel):
+    def realTimeStreamC(self, streamLabel, selectedcountry):
         self.streamLabel = streamLabel
-        stream.startStream(self, self.streamLabel)
+        self.selectedcountry = selectedcountry
+        stream.startStream(self, self.streamLabel, self.selectedcountry)
 
 class killStreamController:
     def killStreamC(self, streamLabel):
@@ -680,6 +689,9 @@ class Page0(QWidget):
     
     def goMain(self):
         self.stackedWidget.setCurrentIndex(1)
+    
+    def closeEvent(self):
+        super().closeEvent()
 
 #Boundary for main page UI (Page 1)
 class Page1(QWidget):
@@ -911,8 +923,8 @@ class Page3(QWidget):
         self.pushButton33.clicked.connect(self.realTimeStream)
         self.pushButton34.clicked.connect(self.killStream)
         self.backButton37.clicked.connect(self.goBack)
-        #self.pushButton35.clicked.connect(self.processRT)
-        self.pushButton36.clicked.connect(self.fetchRTData)
+        self.pushButton35.clicked.connect(self.fetchRTData)
+        #self.pushButton36.clicked.connect(self.analyseRT)
 
         self.addSelButton.clicked.connect(self.addSelection)
         self.removeSelBtn.clicked.connect(self.removeSelection)
@@ -947,7 +959,7 @@ class Page3(QWidget):
        self.stackedWidget.setCurrentIndex(1)
 
     def realTimeStream(self):
-        realTimeStreamController.realTimeStreamC(self, self.streamLabel)
+        realTimeStreamController.realTimeStreamC(self, self.streamLabel,self.selectedcountry)
 
     def killStream(self):
         killStreamController.killStreamC(self, self.streamLabel)
@@ -970,7 +982,7 @@ class Page3(QWidget):
     
     def fetchRTData(self):
         items = [self.selectedcountry.item(i).text() for i in range(self.selectedcountry.count())]
-        items_str = ', '.join(items)
+        items_str = ' '.join(items)
         try:
             if not items_str:
                 raise ValueError("No countries selected")
@@ -981,6 +993,9 @@ class Page3(QWidget):
                 print("ok")
         except ValueError as e:
             QMessageBox.warning(self, 'Error', str(e))
+    
+    def closeEvent(self):
+        super().closeEvent()
 
 #Boundary for getData in Historical Data (page4)
 class getData(Page3):
@@ -1087,7 +1102,7 @@ class loadingPage(QWidget):
 
         layout6 = QVBoxLayout()
 
-        self.labelStart = QLabel('Starting please wait...')
+        self.labelStart = QLabel('Starting please wait about a minute...')
         self.labelStart.setAlignment(Qt.AlignCenter)  # set alignment to center
         font2 = QFont()
         font2.setPointSize(30)  # set font size to 30
@@ -1101,9 +1116,11 @@ class loadingPage(QWidget):
         timer = QTimer(self)
         timer.setSingleShot(True)
         timer.timeout.connect(lambda: self.stackedWidget.setCurrentIndex(1))
-        timer.start(10000)  # Wait for 5 seconds before setting the current index
+        timer.start(60000)  # Wait for 5 seconds before setting the current index
         #goes to main page after containers have started up
 
+    def closeEvent(self):
+        super().closeEvent()
 class MainWindow(QMainWindow):
     def __init__(self):
         #Mainwindow
@@ -1138,6 +1155,32 @@ class MainWindow(QMainWindow):
         #self.stackedWidget.addWidget(self.page6)
         #self.stackedWidget.addWidget(self.page7)
         #self.stackedWidget.setCurrentIndex(3)
+
+    def closeEvent(self, event):
+        reply = QMessageBox.question(self, 'Confirm Exit',
+                                    'Are you sure you want to exit?',
+                                    QMessageBox.Yes | QMessageBox.No,
+                                    QMessageBox.No)
+
+        if reply == QMessageBox.Yes:
+            dialog = QMessageBox(self)
+            dialog.setWindowTitle("Exiting...")
+            dialog.setText("Application is closing...")
+            dialog.setStandardButtons(QMessageBox.NoButton)
+            dialog.setModal(True)
+            dialog.show()
+
+            process = QProcess(None)
+            command = r'docker-compose -f .\docker-compose.yml stop'
+            process.start(command)
+            process.waitForFinished()
+
+            output = process.readAllStandardOutput().data().decode()
+            print(output)
+
+            event.accept()
+        else:
+            event.ignore()
 
     #prompts a confirm close before closing app, and docker-compose stop
 if __name__ == '__main__':
