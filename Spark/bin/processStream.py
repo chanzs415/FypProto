@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 #import
-import os, subprocess, shutil, signal, docker
+import os, subprocess
 from subprocess import check_output
 from confluent_kafka import Consumer, KafkaError, KafkaException
 import time
@@ -17,7 +17,7 @@ def msg_process(msg):
     dval = json.loads(val)
     print(time_start, dval)
     processRT(dval)
-    
+
 def processRT(dval):
     try:
         if dval:
@@ -70,7 +70,9 @@ def main():
                 elif msg.error():
                     raise KafkaException(msg.error())
             else:
+                processRT(msg)
                 msg_process(msg)
+                
     except KeyboardInterrupt:
         pass
     

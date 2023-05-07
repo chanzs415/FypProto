@@ -330,7 +330,7 @@ class dataFiles:
         else:
             print(f"Directory '{directory_path}' does not exist.")
 
-        command2 = f'docker cp sparkcontainer:/app/datafiles/* hadoop_namenode/'
+        command2 = f'docker cp sparkcontainer:/app/datafiles hadoop_namenode/'
         output2 = subprocess.check_output(command2, shell=True)
         print(output2.decode())
         print("Tranferring to volume")
@@ -355,7 +355,7 @@ class dataFiles:
             print('/data does not exist in HDFS')
 
 
-        command4 = f'docker exec -it namenode hdfs dfs -put /tmp/data /data'
+        command4 = f'docker exec -it namenode hdfs dfs -put /tmp/hadoop_namenode /data'
         output4 = subprocess.check_output(command4, shell=True)
         print(output4.decode())
         print("transferring to hdfs")
@@ -430,7 +430,23 @@ class stream:
                     self.process_thread.start()
                     print("Stream3 started successfully.")
 
+                    popup = QMessageBox(self)
+                    popup.setWindowTitle("Stream")
+                    popup.setIcon(QMessageBox.Information)
+                    popup.setText("Stream starting...")
+                    popup.setWindowFlag(Qt.WindowStaysOnTopHint)
+                    popup.setStandardButtons(QMessageBox.NoButton)
+
+                    # Create timer to show "OK" button after 30 seconds
+                    timer = QTimer(self)
+                    timer.setSingleShot(True)
+                    timer.timeout.connect(lambda: popup.setStandardButtons(QMessageBox.Ok))
+                    timer.start(20000)
+
+                    popup.exec_()
+
                     self.streamLabel.setText("Stream status: Stream is running.")
+                    self.selectedcountry.clear()
             else:
                 raise ValueError("Please select a country")
             
@@ -441,29 +457,35 @@ class stream:
     def stopStream(self, streamLabel):
         self.streamLabel = streamLabel
         commands = [
-        "docker exec sparkcontainer pgrep -f test.py",
-        "docker exec sparkcontainer pgrep -f processStream.py",
-        "docker exec sparkcontainer pgrep -f sendStream.py"
+        "docker exec sparkcontainer pgrep -f /app/data/test.py",
+        "docker exec sparkcontainer pgrep -f /app/bin/processStream.py",
+        "docker exec sparkcontainer pgrep -f /app/bin/sendStream.py"
         ]
-        
-        message = f'Are you sure you want to stop the stream?'     
-        confirm = QMessageBox.question(self, 'Stop Stream', message ,
-                                        QMessageBox.Yes | QMessageBox.No)
-        if confirm == QMessageBox.Yes:
-            for command in commands:
-                try:
-                    output = subprocess.check_output(command, shell=True)
-                    pids = output.decode().strip().split("\n")
-                    for pid in pids:
+        try:
+            if self.streamLabel == "Stream status: Stream has stopped.":
+                if self.streamLabel == "Stream status: Not streaming.":
+                    raise ValueError("Stream is not running")
+            else:
+                message = f'Are you sure you want to stop the stream?'     
+                confirm = QMessageBox.question(self, 'Stop Stream', message ,
+                                                QMessageBox.Yes | QMessageBox.No)
+                if confirm == QMessageBox.Yes:
+                    for command in commands:
                         try:
-                            subprocess.check_output(f"docker exec sparkcontainer kill {pid}", shell=True)
-                            print(f"Process with PID {pid} killed.")
+                            output = subprocess.check_output(command, shell=True)
+                            pids = output.decode().strip().split("\n")
+                            for pid in pids:
+                                try:
+                                    subprocess.check_output(f"docker exec sparkcontainer kill {pid}", shell=True)
+                                    print(f"Process with PID {pid} killed.")
+                                except subprocess.CalledProcessError as e:
+                                    print(f"Error killing process with PID {pid}: {e}")
+                            self.streamLabel.setText("Stream status: Stream has stopped.")
+                            print("Stream stopped successfully.")
                         except subprocess.CalledProcessError as e:
-                            print(f"Error killing process with PID {pid}: {e}")
-                    self.streamLabel.setText("Stream status: Stream has stopped.")
-                    print("Stream stopped successfully.")
-                except subprocess.CalledProcessError as e:
-                    print(f"Error getting process ID: {e}")
+                            print(f"Error getting process ID: {e}")
+        except ValueError as e:
+            QMessageBox.warning(self,'Warning', str(e), QMessageBox.Ok)
         
     def viewRT(self):
         message = f'Proceed to analyse RT Data?'     
@@ -486,7 +508,12 @@ class stream:
         
             except subprocess.CalledProcessError as e:
                 print(f'Error: {e.returncode}, Output: {e.output.decode()}')
-            
+
+    def checkStream(self):
+        if self.streamLabel == "Stream status: Stream is running.":
+            return True
+        else:
+            return False
             
 
 #For user to view and select countries        
@@ -1155,7 +1182,7 @@ class loadingPage(QWidget):
         timer = QTimer(self)
         timer.setSingleShot(True)
         timer.timeout.connect(lambda: self.stackedWidget.setCurrentIndex(1))
-        timer.start(60000)  # Wait for 5 seconds before setting the current index
+        timer.start(60000)  # Wait 1 minute before setting the current index
         #goes to main page after containers have started up
 
     def closeEvent(self):
@@ -1202,13 +1229,8 @@ class MainWindow(QMainWindow):
                                     QMessageBox.No)
 
         if reply == QMessageBox.Yes:
-            dialog = QMessageBox(self)
-            dialog.setWindowTitle("Exiting...")
-            dialog.setText("Application is closing...")
-            dialog.setStandardButtons(QMessageBox.NoButton)
-            dialog.setModal(True)
-            dialog.show()
-
+            QMessageBox.information(self, "Exiting...", "Application is closing...")
+            
             process = QProcess(None)
             command = r'docker-compose -f .\docker-compose.yml stop'
             process.start(command)
@@ -1220,6 +1242,7 @@ class MainWindow(QMainWindow):
             event.accept()
         else:
             event.ignore()
+    
 
     #prompts a confirm close before closing app, and docker-compose stop
 if __name__ == '__main__':
