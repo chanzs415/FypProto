@@ -18,7 +18,7 @@ class ListBoxWidget(QListWidget):
         self.setAcceptDrops(True)
         self.resize(600, 300)
         container_id = "sparkcontainer"  # Replace with your container name or ID
-        directory = r"/app/data"
+        directory = r"/app/datafiles"
         command = f"docker exec {container_id} ls {directory}"
         try:
             output = check_output(command, shell=True).decode()
