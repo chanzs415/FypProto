@@ -44,7 +44,7 @@ def main():
         try:
             with open(args.filename, "r") as f:
                 rdr = csv.reader(f)
-                next(rdr)  # Skip header
+                #next(rdr)  # Skip header
 
                 for line in rdr:
                     result = {}
@@ -81,5 +81,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

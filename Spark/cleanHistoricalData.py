@@ -1,7 +1,7 @@
 from pyspark.sql.functions import udf, from_unixtime
 from pyspark.sql.types import TimestampType
 from pyspark.sql import Window
-from pyspark.sql.functions import col, when, expr
+from pyspark.sql.functions import col, when, expr, date_format
 from pyspark.sql.functions import sum as spark_sum
 from pyspark.sql.functions import mean, col, approx_count_distinct
 from pyspark.sql.types import DoubleType
@@ -25,7 +25,8 @@ df = spark.read.csv(input_file_path, header=True, inferSchema=True)
 #df = spark.read.csv("/app/data/historicalData_Malaysia_2023-03-01.csv", header=True, inferSchema=True)
 
 # convert the 'time_epoch' column to a datetime object
-df = df.withColumn('time', from_unixtime(col('time_epoch')).cast(TimestampType()))
+#df = df.withColumn('time', from_unixtime(col('time_epoch')).cast(TimestampType()))
+df = df.withColumn('time', date_format(from_unixtime(col('time_epoch')).cast(TimestampType()), 'yyyy-MM-dd HH:mm:ss'))
 
 # drop the 'time_epoch' column
 df = df.drop('time_epoch')
@@ -99,6 +100,7 @@ elif missing_data[0] is None:
 else:
     print("Successfully cleaned data.")
 
+df = df.orderBy('time')
 
     # Save cleaned data to a new CSV file
 df.write.mode("overwrite").csv("/usr/local/output", header=True)

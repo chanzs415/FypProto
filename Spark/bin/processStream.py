@@ -17,6 +17,7 @@ def msg_process(msg):
     dval = json.loads(val)
     print(time_start, dval)
     processRT(dval)
+
 def processRT(dval):
     try:
         if dval:
@@ -69,6 +70,7 @@ def main():
                 elif msg.error():
                     raise KafkaException(msg.error())
             else:
+                #processRT(msg)
                 msg_process(msg)
                 
     except KeyboardInterrupt:

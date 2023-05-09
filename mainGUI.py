@@ -1,8 +1,8 @@
 import os, subprocess, shutil, signal, docker
-import sys
+import sys, time, threading
 from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtCore import QDate,QProcess, QUrl, QTextStream, Qt, QTimer, QThread, pyqtSignal, pyqtSlot
-from PyQt5.QtWidgets import QTextEdit, QDateEdit,QHBoxLayout,QLineEdit, QApplication, QMainWindow, QStackedWidget, QFileDialog,QWidget, QVBoxLayout, QGridLayout, QPushButton, QLabel, QListWidget, QListWidgetItem, QMessageBox
+from PyQt5.QtCore import QDate,QProcess, QUrl, QTextStream, Qt, QTimer, QThread, pyqtSignal, pyqtSlot, QBasicTimer
+from PyQt5.QtWidgets import QTextEdit, QProgressBar, QDateEdit,QHBoxLayout,QLineEdit, QApplication, QMainWindow, QStackedWidget, QFileDialog,QWidget, QVBoxLayout, QGridLayout, QPushButton, QLabel, QListWidget, QListWidgetItem, QMessageBox
 from PyQt5.QtWebEngineWidgets import *
 from PyQt5.QtGui import QDesktopServices,QFont
 from send2trash import send2trash
@@ -115,6 +115,13 @@ class startApp:
         process.startDetached(command1)   
         self.stackedWidget.setCurrentIndex(5)
 
+    def firstSetup(self, stackedWidget):
+        self.stackedWidget = stackedWidget
+        process = QProcess(None)
+        command1 = r'docker-compose -f .\docker-compose.yml up'
+        process.startDetached(command1) 
+        self.stackedWidget.setCurrentIndex(6) #initialize setup loading page
+
 class containerE:
     def refreshContainer(self, containerList):
         self.containerList = containerList
@@ -134,11 +141,66 @@ class containerE:
         process.waitForFinished()
         output = process.readAllStandardOutput().data().decode()
         print(output)
+    
+    def checkContainers(self):
+        self.docker_client = docker.from_env()
+        for c in self.docker_client.containers.list(all=True):
+            if c.status == "exited":
+                confirm = QMessageBox.question(self, 'Containers', 'Containers not running. \nDo you want to continue to Main Page without starting the containers?',
+                                                QMessageBox.Yes | QMessageBox.No)
+                if confirm == QMessageBox.Yes: 
+                    return True
+                else:
+                    return False
+            else:
+                return True
+
+    
+    def containersPresent(self):
+        self.docker_client = docker.from_env()
+        containerList = []
+        containerReal = ['kafcontainer', 'sparkcontainer', 'datanode', 'namenode', 'historyserver', 'resourcemanager', 'viscontainer', 'zoocontainer', 'nodemanager', 'viscontainer2']
+        containerReal.sort()
+        containers = self.docker_client.containers.list(all = True)
+        for container in containers:
+            containerList.append(container.name)
+        containerList.sort()
+        #print(containerList)
+        if containerReal == containerList:
+            #print("Is inside")
+            for container in containers:
+                if container.status == "exited":
+                     return False
+                else:
+                    return True
+        else:
+            print("Not inside")
+            return False
+        
+    def containersPresent2(self):
+        self.docker_client = docker.from_env()
+        containerList = []
+        containerReal = ['kafcontainer', 'sparkcontainer', 'datanode', 'namenode', 'historyserver', 'resourcemanager', 'viscontainer', 'zoocontainer', 'nodemanager', 'viscontainer2']
+        containerReal.sort()
+        containers = self.docker_client.containers.list(all = True)
+        for container in containers:
+            containerList.append(container.name)
+        containerList.sort()
+        #print(containerList)
+        if containerReal == containerList:
+            #print("Is inside")
+            for container in containers:
+                if container.status == "exited":
+                     return True
+        else:
+            print("Not inside")
+            return False
+
 
 #For Historical data page
 class dataFiles:
     def refreshFiles(self,listview):
-        print("Listing files...")
+        #print("Listing files...")
         self.listview = listview
         self.listview.clear()  # Clear the listbox view
         container_id = "sparkcontainer" 
@@ -156,8 +218,10 @@ class dataFiles:
         except Exception as e:
             print(f"Error listing files: {e}")
 
-    def processData(self,listview):
+    def processData(self,listview, processStatus):
         self.listview = listview
+        self.processStatus = processStatus
+        self.processStatus.setText("Process Status: Processing data...")
         try:
             directory_path = r'.\hadoop_namenode'
             if os.path.exists(directory_path):
@@ -165,7 +229,8 @@ class dataFiles:
             else:
                 print(f"Directory '{directory_path}' does not exist.")
 
-            #process data
+            
+            #process data   
             item = self.listview.currentItem()
             full_path = item.text()
             # Extract filename from full path
@@ -179,6 +244,7 @@ class dataFiles:
 
         # Show a message box after the function has finished running
             messagebox.showinfo('Finished', 'Processing complete!')
+            self.processStatus.setText("Process Status: Complete.")
         except Exception as e:
             # Show a message box with the error message if an exception occurs
             messagebox.showerror('Error', str(e))
@@ -621,7 +687,11 @@ class countries:
 class startPageController:
     def enterPage(self, stackedWidget):
         self.stackedWidget = stackedWidget
-        startApp.startContainer(self, self.stackedWidget)
+        self.containers = containerE.containersPresent2(self)
+        if self.containers == True:
+            startApp.startContainer(self, self.stackedWidget)
+        else:
+            startApp.firstSetup(self,self.stackedWidget)
 
 class containerStatusController:
     def containerStatusC(self, containerList):
@@ -637,9 +707,10 @@ class refreshHistController:
         dataFiles.refreshFiles(self,self.listview)
 
 class processHistController:
-    def processHistC(self, listview):
+    def processHistC(self, listview, processStatus):
+        self.processStatus = processStatus
         self.listview = listview
-        dataFiles.processData(self, self.listview)
+        dataFiles.processData(self, self.listview, processStatus)
 
 class viewHistController:
     def viewHistC(self):
@@ -722,6 +793,7 @@ class Page0(QWidget):
 
         layout0 = QVBoxLayout()
         self.container_list = QListWidget()
+        layout0.setAlignment(Qt.AlignCenter)
 
         self.pushButton01 = QPushButton("Start")
         self.pushButton01.setFixedSize(250, 90)
@@ -740,6 +812,7 @@ class Page0(QWidget):
 
         self.pushButton01.clicked.connect(self.startPage)
         self.pushButton03.clicked.connect(self.goMain)
+        self.pushButton02.clicked.connect(self.goAbout)
 
         layout0.addWidget(self.pushButton01)
         layout0.addWidget(self.pushButton02)
@@ -751,7 +824,12 @@ class Page0(QWidget):
         startPageController.enterPage(self, self.stackedWidget)
     
     def goMain(self):
-        self.stackedWidget.setCurrentIndex(1)
+        status = containerE.checkContainers(self)
+        if status:
+            self.stackedWidget.setCurrentIndex(1)
+    
+    def goAbout(self):
+        containerE.containersPresent(self.stackedWidget)
     
     def closeEvent(self):
         super().closeEvent()
@@ -887,6 +965,8 @@ class Page2(QWidget):
         self.pushButton28.setFixedSize(100,50)
         self.pushButton28.setFont(font)
 
+        self.processStatus = QLabel("Process Status: ")
+
         self.pushButton22.clicked.connect(self.getdData)
         #self.pushButton22.clicked.connect(lambda: print(self.getSelectedItem()))
         self.pushButton23.clicked.connect(self.processHist)
@@ -904,24 +984,31 @@ class Page2(QWidget):
         layout2.addWidget(self.pushButton24, 2, 2)
         layout2.addWidget(self.pushButton25, 3, 1)
         layout2.addWidget(self.pushButton26, 3, 2)
-        layout2.addWidget(self.backButton27, 6, 3)
+        layout2.addWidget(self.backButton27, 8, 3)
+        layout2.addWidget(self.processStatus, 8,0)
         
         self.setLayout(layout2)
+
+        timer = QTimer()
+        timer.timeout.connect(lambda: self.refreshHist(self))
+        timer.start(500)
+        
 
     def closeEvent(self):
         super().closeEvent()
 
     def goBack(self):
-       self.stackedWidget.setCurrentIndex(1)
+        self.stackedWidget.setCurrentIndex(1)
 
     def getdData(self):
         self.stackedWidget.setCurrentIndex(4)
+        self.refreshHist()
 
     def refreshHist(self):
         refreshHistController.refreshHistC(self, self.listview)
 
     def processHist(self):
-        processHistController.processHistC(self, self.listview)
+        processHistController.processHistC(self, self.listview, self.processStatus)
         self.refreshHist()
 
     #open up streamlit
@@ -956,7 +1043,7 @@ class Page3(QWidget):
         #self.listview = ListBoxWidget(self)
         self.pushButton33= QPushButton("Start")
         self.pushButton34= QPushButton("Stop")
-        self.pushButton35= QPushButton("Process")
+        #self.pushButton35= QPushButton("Process")
         self.pushButton36= QPushButton("Analyse")
         self.backButton37 = QPushButton('Back')
         #self.textEdit = QTextEdit(self)
@@ -986,13 +1073,13 @@ class Page3(QWidget):
         self.pushButton33.clicked.connect(self.realTimeStream)
         self.pushButton34.clicked.connect(self.killStream)
         self.backButton37.clicked.connect(self.goBack)
-        self.pushButton35.clicked.connect(self.fetchRTData)
+        #self.pushButton35.clicked.connect(self.fetchRTData)
         self.pushButton36.clicked.connect(self.analyseRT)
 
         self.addSelButton.clicked.connect(self.addSelection)
         self.removeSelBtn.clicked.connect(self.removeSelection)
-        self.addCountryButton.clicked.connect(self.addCountry)
-        self.delCountryButton.clicked.connect(self.delCountry)
+        #self.addCountryButton.clicked.connect(self.addCountry)
+        #self.delCountryButton.clicked.connect(self.delCountry)
 
         self.timer = QTimer()
         #self.timer.timeout.connect(self.updateOutput)
@@ -1002,14 +1089,14 @@ class Page3(QWidget):
         layout3.addWidget(self.availCountry,1,0,4,1)
         layout3.addWidget(self.pushButton33, 1, 1)
         layout3.addWidget(self.pushButton34, 1, 2)
-        layout3.addLayout(hbox, 5, 0)
+        #layout3.addLayout(hbox, 5, 0)
         layout3.addWidget(self.addSelButton, 2,1)
-        layout3.addWidget(self.delCountryButton,5,1)
+        #layout3.addWidget(self.delCountryButton,5,1)
         
         layout3.addWidget(self.label2, 7,0)
         layout3.addWidget(self.selectedcountry,8,0,4,1)
-        layout3.addWidget(self.pushButton35, 8, 1)
-        layout3.addWidget(self.pushButton36, 8, 2)
+        #layout3.addWidget(self.pushButton35, 8, 1)
+        layout3.addWidget(self.pushButton36, 8, 1)
         layout3.addWidget(self.removeSelBtn,9,1)
 
         layout3.addWidget(self.processLabel, 13,0)
@@ -1125,8 +1212,8 @@ class getData(Page3):
         self.backButton37.clicked.connect(self.goBack)
         self.addSelButton.clicked.connect(self.addSelection)
         self.removeSelBtn.clicked.connect(self.removeSelection)
-        self.addCountryButton.clicked.connect(self.addCountry)
-        self.delCountryButton.clicked.connect(self.delCountry)
+        #self.addCountryButton.clicked.connect(self.addCountry)
+        #self.delCountryButton.clicked.connect(self.delCountry)
         self.retreiveBtn.clicked.connect(self.fetchData) 
 
         #layout3.addWidget(self.textEdit, 0, 0 , 4, 1) #row, columns, occupy no. rows, occupy no. colums
@@ -1136,9 +1223,9 @@ class getData(Page3):
         self.layout().addWidget(self.startDateCal, 1, 2)
         self.layout().addWidget(self.endDate, 2, 1)
         self.layout().addWidget(self.endDateCal, 2, 2)
-        self.layout().addLayout(hbox, 5, 0)
+        #self.layout().addLayout(hbox, 5, 0)
         self.layout().addWidget(self.addSelButton, 3,1)
-        self.layout().addWidget(self.delCountryButton,5,1)
+        #self.layout().addWidget(self.delCountryButton,5,1)
         
         self.layout().addWidget(self.label2, 7,0)
         self.layout().addWidget(self.selectedcountry,8,0,4,1)
@@ -1187,6 +1274,54 @@ class loadingPage(QWidget):
 
     def closeEvent(self):
         super().closeEvent()
+
+class FirstSetupPage(QWidget):
+    def __init__(self, stackedWidget):
+        super().__init__()
+        self.stackedWidget = stackedWidget
+
+        font = QtGui.QFont()
+        font.setPointSize(16)
+
+        layout6 = QVBoxLayout()
+
+        self.labelStart = QLabel('Setting up containers for initial setup...\n(About 10 minutes.)')
+        self.labelStart.setAlignment(Qt.AlignCenter)  # set alignment to center
+        font2 = QFont()
+        font2.setPointSize(30)  # set font size to 30
+        self.labelStart.setFont(font2)  # set font for the label
+        layout6.addWidget(self.labelStart)
+
+        self.container_list = QListWidget()
+        #self.refreshContainerList()
+
+        self.label1 = QLabel("Container - Status")
+
+        layout6.addWidget(self.label1)
+        layout6.addWidget(self.container_list)
+
+        # initialize the list
+        self.timer = QTimer()
+        self.timer.timeout.connect(lambda: self.containerStatus(self.container_list))
+        self.timer.timeout.connect(lambda: self.checkContainer())
+        self.timer.start(1000)
+
+        self.setLayout(layout6)
+
+    def containerStatus(self, containerList):
+        containerStatusController.containerStatusC(self,containerList)
+
+    def checkContainer(self):
+        if containerE.containersPresent(self): 
+            self.timer.stop()
+            self.stackedWidget.setCurrentIndex(1)
+    def closeEvent(self):
+        super().closeEvent()
+
+
+
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         #Mainwindow
@@ -1207,6 +1342,7 @@ class MainWindow(QMainWindow):
         self.page3 = Page3(self.stackedWidget)
         self.page4 = getData(self.stackedWidget)
         self.page5 = loadingPage(self.stackedWidget)
+        self.page6 = FirstSetupPage(self.stackedWidget)
         #self.page6 = Page6(self.stackedWidget)
         #self.page7 = getData(self.stackedWidget)
         #self.stackedWidget.addWidget(self.page0)
@@ -1218,9 +1354,9 @@ class MainWindow(QMainWindow):
         self.stackedWidget.addWidget(self.page3)
         self.stackedWidget.addWidget(self.page4)
         self.stackedWidget.addWidget(self.page5)
-        #self.stackedWidget.addWidget(self.page6)
+        self.stackedWidget.addWidget(self.page6)
         #self.stackedWidget.addWidget(self.page7)
-        #self.stackedWidget.setCurrentIndex(3)
+        #self.stackedWidget.setCurrentIndex(6)
 
     def closeEvent(self, event):
         reply = QMessageBox.question(self, 'Confirm Exit',
@@ -1229,8 +1365,7 @@ class MainWindow(QMainWindow):
                                     QMessageBox.No)
 
         if reply == QMessageBox.Yes:
-            QMessageBox.information(self, "Exiting...", "Application is closing...")
-            
+            #confirm = QMessageBox.information(self, "Exiting...", "Application is closing...")
             process = QProcess(None)
             command = r'docker-compose -f .\docker-compose.yml stop'
             process.start(command)
