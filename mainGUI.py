@@ -682,7 +682,20 @@ class countries:
         except ValueError as e:
             QMessageBox.warning(self, 'Warning', str(e), QMessageBox.Ok)
             self.country_edit.clear()
-        
+
+class interface:
+    def goTo0(self, stackwidget):
+        self.stackedwidget = stackwidget
+        self.stackedwidget.setCurrentIndex(0)
+    
+    def goTo1(self, stackwidget):
+        self.stackedwidget = stackwidget
+        self.stackedwidget.setCurrentIndex(1)
+
+    def goTo2(self, stackwidget):
+        self.stackedwidget = stackwidget
+        self.stackedwidget.setCurrentIndex(2)
+
 #====================================CONTROLLERS=======================================
 class startPageController:
     def enterPage(self, stackedWidget):
@@ -781,6 +794,15 @@ class fetchDataController:
 class analyseRTController:
     def analyseRTC(self):
         stream.viewRT(self)
+
+class backButtonController:
+    def backButtonC(self,stackedwidget, page):
+        if page == 0:
+            interface.goTo0(self, stackedwidget)
+        elif page == 1:
+            interface.goTo1(self, stackedwidget)
+        elif page == 2:
+            interface.goTo2(self, stackedwidget)
 #====================================BOUNDARIES=======================================
 
 #Boundary for Starting page UI (page0)
@@ -891,7 +913,7 @@ class Page1(QWidget):
         layout1.addWidget(self.pushButton15, 2, 5) # Add the button to the grid layout1 at row 1, column 1
 
         # add button functionality for page 1
-        self.pushButton11.clicked.connect(self.goStart)
+        self.pushButton11.clicked.connect(self.goBack)
         self.pushButton12.clicked.connect(self.analyseHist)
         self.pushButton13.clicked.connect(self.analyseRT)
         self.pushButton15.clicked.connect(self.stopContainer)
@@ -900,8 +922,8 @@ class Page1(QWidget):
         self.setLayout(layout1)
 
     #Goes back to starting page
-    def goStart(self):
-        self.stackedWidget.setCurrentIndex(0)
+    def goBack(self):
+        backButtonController.backButtonC(self, self.stackedWidget, 0)
 
     #Goes to RT page
     def analyseRT(self):
@@ -998,7 +1020,7 @@ class Page2(QWidget):
         super().closeEvent()
 
     def goBack(self):
-        self.stackedWidget.setCurrentIndex(1)
+        backButtonController.backButtonC(self, self.stackedWidget, 1)
 
     def getdData(self):
         self.stackedWidget.setCurrentIndex(4)
@@ -1008,6 +1030,7 @@ class Page2(QWidget):
         refreshHistController.refreshHistC(self, self.listview)
 
     def processHist(self):
+        self.processStatus.setText("Process Status: Processing data...")
         processHistController.processHistC(self, self.listview, self.processStatus)
         self.refreshHist()
 
@@ -1106,7 +1129,7 @@ class Page3(QWidget):
         self.setLayout(layout3)
 
     def goBack(self):
-       self.stackedWidget.setCurrentIndex(1)
+        backButtonController.backButtonC(self, self.stackedWidget, 1)
 
     def realTimeStream(self):
         realTimeStreamController.realTimeStreamC(self, self.streamLabel,self.selectedcountry)
@@ -1239,7 +1262,7 @@ class getData(Page3):
         self.layout().addWidget(self.backButton37, 14, 3)
 
     def goBack(self):
-        self.stackedWidget.setCurrentIndex(2)
+        backButtonController.backButtonC(self, self.stackedWidget, 2)
 
     def fetchData(self):
         fetchDataController.fetchDataC(self, self.stackedWidget, self.selectedcountry, self.startDateCal, self.endDateCal, self.listview)
