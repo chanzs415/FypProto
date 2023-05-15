@@ -30,7 +30,7 @@ class ListBoxWidget(QListWidget):
                     item = item.text().replace('\\', '/')
                     self.addItem(item)
         except Exception as e:
-            print(f"Error listing files: {e}")
+            print(f"No files: {e}")
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls:
@@ -72,7 +72,7 @@ class ListBoxWidget(QListWidget):
                 print("Source file is not a .csv file.")
 
             process = QProcess(None)
-            command1 = "docker cp " + x + r" sparkcontainer:/app/data"
+            command1 = "docker cp " + x + r" sparkcontainer:/app/datafiles"
             print(command1)
             process.start(command1)
             process.waitForFinished()
@@ -105,22 +105,43 @@ class ProcessThread(QThread):
                 self.new_output.emit(output)
         except Exception as e:
             self.error_occurred.emit(str(e))
+
+class DataCleaningThread(QThread):
+    progress_updated = pyqtSignal(int)
+
+    def __init__(self, filename):
+        super().__init__()
+        self.filename = filename
+
+    def run(self):
+        command = self.filename
+        process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        for line in iter(process.stdout.readline, b''):
+            output = line.decode().strip()
+            if output.startswith("Progress:"):
+                progress = int(output.split(":")[1].strip().replace("%", ""))
+                self.progress_updated.emit(progress)
+        process.stdout.close()
+        process.wait()
 #====================================ENTITIES=======================================
 
 class startApp:
     def startContainer(self,stackedWidget):
         self.stackedWidget = stackedWidget
-        process = QProcess(None)
-        command1 = r'docker-compose -f .\docker-compose.yml up'
-        process.startDetached(command1)   
-        self.stackedWidget.setCurrentIndex(5)
+        #self.stackedWidget.setCurrentIndex(5)
+        print("Start container")
+        loadingpage = loadingPage(self.stackedWidget)
+        self.stackedWidget.addWidget(loadingpage)
+        self.stackedWidget.setCurrentWidget(loadingpage)
+        self.stackedWidget.show()
 
     def firstSetup(self, stackedWidget):
         self.stackedWidget = stackedWidget
-        process = QProcess(None)
-        command1 = r'docker-compose -f .\docker-compose.yml up'
-        process.startDetached(command1) 
-        self.stackedWidget.setCurrentIndex(6) #initialize setup loading page
+        setuppage = FirstSetupPage(self.stackedWidget)
+        self.stackedWidget.addWidget(setuppage)
+        self.stackedWidget.setCurrentWidget(setuppage)
+        self.stackedWidget.show() 
+    
 
 class containerE:
     def refreshContainer(self, containerList):
@@ -218,10 +239,10 @@ class dataFiles:
         except Exception as e:
             print(f"Error listing files: {e}")
 
-    def processData(self,listview, processStatus):
+    def processData(self,listview, progressBar, cleaningThread):
         self.listview = listview
-        self.processStatus = processStatus
-        self.processStatus.setText("Process Status: Processing data...")
+        self.progressBar = progressBar
+        self.progressBar.show()
         try:
             directory_path = r'.\hadoop_namenode'
             if os.path.exists(directory_path):
@@ -236,19 +257,25 @@ class dataFiles:
             # Extract filename from full path
             filename = os.path.basename(full_path)
             command5 = f'docker exec -it sparkcontainer spark-submit cleanHistoricalData.py hdfs://namenode:9000/data/' + filename
-            # Run the command and capture the output
-            output = subprocess.check_output(command5, shell=True, stderr=subprocess.STDOUT)
-            #Print the output
-            print(output.decode())
-            #docker exec -it sparkcontainer python3 data-clean-historical.py hdfs://namenode:9000/data/concated_df.csv
-
-        # Show a message box after the function has finished running
-            messagebox.showinfo('Finished', 'Processing complete!')
-            self.processStatus.setText("Process Status: Complete.")
+            if self.data_cleaning_thread is None:
+                self.progressBar.show()
+                self.data_cleaning_thread = DataCleaningThread("docker exec -it sparkcontainer spark-submit cleanHistoricalData.py /app/datafiles/historicalData_Australia_2023-03-01.csv")
+                self.data_cleaning_thread.progress_updated.connect(self.progressBar.setValue)
+                self.data_cleaning_thread.finished.connect(lambda: data_cleaning_finished(self.data_cleaning_thread,self.progressBar))
+                self.data_cleaning_thread.start()
+                
+            def data_cleaning_finished(data_cleaning_thread, progress_bar):
+                data_cleaning_thread = None
+                progress_bar.hide()
+                messagebox.showinfo('Finished', 'Processing complete!')           
+          
         except Exception as e:
             # Show a message box with the error message if an exception occurs
             messagebox.showerror('Error', str(e))
+
+    
         
+
     def delFile(self, listview, x , text):
         self.listview = listview
         self.x = x
@@ -723,7 +750,8 @@ class processHistController:
     def processHistC(self, listview, processStatus):
         self.processStatus = processStatus
         self.listview = listview
-        dataFiles.processData(self, self.listview, processStatus)
+        self.data_cleaning_thread = None
+        dataFiles.processData(self, self.listview, processStatus, self.data_cleaning_thread)
 
 class viewHistController:
     def viewHistC(self):
@@ -851,7 +879,8 @@ class Page0(QWidget):
             self.stackedWidget.setCurrentIndex(1)
     
     def goAbout(self):
-        containerE.containersPresent(self.stackedWidget)
+        #containerE.containersPresent(self.stackedWidget)
+        print("Ok")
     
     def closeEvent(self):
         super().closeEvent()
@@ -961,6 +990,7 @@ class Page2(QWidget):
         self.label1.setFont(font)
 
         self.listview = ListBoxWidget(self)
+        self.refreshHist()
         #self.listview.dropEventSignal.connect(self.trxHDFS) # Connect the signal to a slot
         self.pushButton22= QPushButton("Get Data")
         self.pushButton22.setFixedSize(100,50)
@@ -987,7 +1017,14 @@ class Page2(QWidget):
         self.pushButton28.setFixedSize(100,50)
         self.pushButton28.setFont(font)
 
+        self.progress_bar = QProgressBar(self)
+        self.progress_bar.setGeometry(50, 50, 300, 30)
+        self.progress_bar.hide()
         self.processStatus = QLabel("Process Status: ")
+
+        layoutP = QHBoxLayout()
+        layoutP.addWidget(self.processStatus)
+        layoutP.addWidget(self.progress_bar)
 
         self.pushButton22.clicked.connect(self.getdData)
         #self.pushButton22.clicked.connect(lambda: print(self.getSelectedItem()))
@@ -1007,14 +1044,15 @@ class Page2(QWidget):
         layout2.addWidget(self.pushButton25, 3, 1)
         layout2.addWidget(self.pushButton26, 3, 2)
         layout2.addWidget(self.backButton27, 8, 3)
-        layout2.addWidget(self.processStatus, 8,0)
+        layout2.addLayout(layoutP, 8,0)
         
         self.setLayout(layout2)
 
         timer = QTimer()
         timer.timeout.connect(lambda: self.refreshHist(self))
         timer.start(500)
-        
+        self.stackedWidget.currentChanged.connect(self.refreshHist)
+
 
     def closeEvent(self):
         super().closeEvent()
@@ -1030,8 +1068,7 @@ class Page2(QWidget):
         refreshHistController.refreshHistC(self, self.listview)
 
     def processHist(self):
-        self.processStatus.setText("Process Status: Processing data...")
-        processHistController.processHistC(self, self.listview, self.processStatus)
+        processHistController.processHistC(self, self.listview, self.progress_bar)
         self.refreshHist()
 
     #open up streamlit
@@ -1274,7 +1311,7 @@ class loadingPage(QWidget):
         self.stackedWidget = stackedWidget
 
         font = QtGui.QFont()
-        font.setPointSize(16)
+        font.setPointSize(12)
 
         layout6 = QVBoxLayout()
 
@@ -1283,17 +1320,65 @@ class loadingPage(QWidget):
         font2 = QFont()
         font2.setPointSize(30)  # set font size to 30
         self.labelStart.setFont(font2)  # set font for the label
+
+        self.progress_bar = QProgressBar(self)
+        self.progress_bar.setGeometry(0 ,0 ,500, 80)
+
         layout6.addWidget(self.labelStart)
+        layout6.addWidget(self.progress_bar)
+
+        self.runProcess()
 
         self.setLayout(layout6)
 
-    def showEvent(self, event):
-        # Create a QTimer
-        timer = QTimer(self)
-        timer.setSingleShot(True)
-        timer.timeout.connect(lambda: self.stackedWidget.setCurrentIndex(1))
-        timer.start(60000)  # Wait 1 minute before setting the current index
-        #goes to main page after containers have started up
+    def runProcess(self):
+        # Create QProcess and command string
+        self.process = QProcess()
+        command = 'docker-compose -f ./docker-compose.yml up'
+
+        # Set process channel mode and start
+        self.process.setProcessChannelMode(QProcess.MergedChannels)
+        self.process.start(command)
+
+        # Connect process signals to slots
+        self.process.readyRead.connect(self.readProcessOutput)
+        self.process.finished.connect(self.processFinished)
+
+        self.progress_bar.setRange(0, 0)
+        self.progress_bar.setValue(0)
+        self.progress_bar.show()
+
+        # Start timer for 1 minute and connect to slot
+        self.timer = QTimer()
+        self.timer.setSingleShot(True)
+        self.timer.timeout.connect(self.timerFinished)
+        self.timer.start(60000)
+
+    def readProcessOutput(self):
+        # Read output from process and update progress bar
+        process_output = str(self.process.readAll(), 'utf-8')
+        self.progress_bar.setValue(self.progress_bar.value() + 1)
+
+    def processFinished(self):
+        # Stop timer and hide progress bar
+        self.timer.stop()
+        self.progress_bar.hide()
+        self.progress_bar.setValue(0)
+        current_widget_index = self.stackedWidget.currentIndex()
+        current_widget = self.stackedWidget.widget(current_widget_index)
+        self.stackedWidget.removeWidget(current_widget)
+        self.stackedWidget.setCurrentIndex(1)
+
+    def timerFinished(self):
+        #self.timer.stop()
+        self.progress_bar.hide()
+        self.progress_bar.setValue(0)
+        current_widget_index = self.stackedWidget.currentIndex()
+        current_widget = self.stackedWidget.widget(current_widget_index)
+        self.stackedWidget.removeWidget(current_widget)
+        self.stackedWidget.setCurrentIndex(1)
+        # Do something when timer finished
+        #print("Timer finished")
 
     def closeEvent(self):
         super().closeEvent()
@@ -1306,9 +1391,13 @@ class FirstSetupPage(QWidget):
         font = QtGui.QFont()
         font.setPointSize(16)
 
+        process = QProcess(None)
+        command1 = r'docker-compose -f .\docker-compose.yml up'
+        process.startDetached(command1)
+
         layout6 = QVBoxLayout()
 
-        self.labelStart = QLabel('Setting up containers for initial setup...\n(About 10 minutes.)')
+        self.labelStart = QLabel('Setting up containers for initial setup...\n(About 8-10 minutes.)')
         self.labelStart.setAlignment(Qt.AlignCenter)  # set alignment to center
         font2 = QFont()
         font2.setPointSize(30)  # set font size to 30
@@ -1337,6 +1426,9 @@ class FirstSetupPage(QWidget):
     def checkContainer(self):
         if containerE.containersPresent(self): 
             self.timer.stop()
+            current_widget_index = self.stackedWidget.currentIndex()
+            current_widget = self.stackedWidget.widget(current_widget_index)
+            self.stackedWidget.removeWidget(current_widget)
             self.stackedWidget.setCurrentIndex(1)
     def closeEvent(self):
         super().closeEvent()
@@ -1364,8 +1456,8 @@ class MainWindow(QMainWindow):
         self.page2 = Page2(self.stackedWidget)
         self.page3 = Page3(self.stackedWidget)
         self.page4 = getData(self.stackedWidget)
-        self.page5 = loadingPage(self.stackedWidget)
-        self.page6 = FirstSetupPage(self.stackedWidget)
+        #self.page5 = loadingPage(self.stackedWidget)
+        #self.page6 = FirstSetupPage(self.stackedWidget)
         #self.page6 = Page6(self.stackedWidget)
         #self.page7 = getData(self.stackedWidget)
         #self.stackedWidget.addWidget(self.page0)
@@ -1376,8 +1468,8 @@ class MainWindow(QMainWindow):
         self.stackedWidget.addWidget(self.page2)
         self.stackedWidget.addWidget(self.page3)
         self.stackedWidget.addWidget(self.page4)
-        self.stackedWidget.addWidget(self.page5)
-        self.stackedWidget.addWidget(self.page6)
+        #self.stackedWidget.addWidget(self.page5)
+        #self.stackedWidget.addWidget(self.page6)
         #self.stackedWidget.addWidget(self.page7)
         #self.stackedWidget.setCurrentIndex(6)
 
